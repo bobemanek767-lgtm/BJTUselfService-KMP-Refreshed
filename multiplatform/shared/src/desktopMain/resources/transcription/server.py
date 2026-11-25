@@ -45,11 +45,18 @@ class HlsCache:
             raise ValueError('录像过大或下载超时')
         if url in self.cache:
             return self.cache[url]
-        target = self.root / f'{len(self.cache):06d}.bin'
+        index = len(self.cache)
+        suffix = Path(urlsplit(url).path).suffix.lower()
+        if suffix not in {'.m3u8', '.ts', '.m4s', '.mp4', '.aac', '.key', '.vtt', '.webvtt'}:
+            suffix = '.bin'
+        target = self.root / f'{index:06d}{suffix}'
         self.cache[url] = target.name
         with self.opener.open(Request(url, headers={'User-Agent': 'BJTU-Transcript/1'}), timeout=30) as response:
             first = response.read(1024)
             playlist = first.lstrip().startswith(b'#EXTM3U')
+            if playlist and target.suffix != '.m3u8':
+                target = target.with_suffix('.m3u8')
+                self.cache[url] = target.name
             with target.open('wb') as out:
                 chunk = first
                 size = 0
@@ -80,6 +87,10 @@ def ffmpeg_executable():
         return imageio_ffmpeg.get_ffmpeg_exe()
     except ImportError:
         return shutil.which('ffmpeg') or 'ffmpeg'
+
+
+def extract_audio(manifest, audio):
+    subprocess.run([ffmpeg_executable(), '-nostdin', '-v', 'error', '-protocol_whitelist', 'file,crypto', '-allowed_extensions', 'ALL', '-f', 'hls', '-i', str(manifest), '-vn', '-ac', '1', '-ar', '16000', str(audio)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600)
 
 
 def timestamp(seconds, srt=False):
@@ -119,16 +130,21 @@ class Service:
             self.jobs[key].update(values)
 
     def run(self, key, url):
+        stage = 'download'
         try:
-            self.update(key, status='running', message='下载录像并提取音频')
+            self.update(key, status='running', message='正在下载录像音视频分片')
             with tempfile.TemporaryDirectory(prefix='bjtu-transcript-') as folder:
                 manifest = HlsCache(folder).fetch(url)
+                stage = 'audio'
+                self.update(key, message='正在提取音频')
                 audio = str(Path(folder) / 'audio.wav')
-                subprocess.run([ffmpeg_executable(), '-nostdin', '-v', 'error', '-protocol_whitelist', 'file,crypto', '-allowed_extensions', 'ALL', '-i', str(Path(folder) / manifest), '-vn', '-ac', '1', '-ar', '16000', audio], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3600)
+                extract_audio(Path(folder) / manifest, audio)
+                stage = 'model'
                 self.update(key, message='加载模型（首次运行需要下载）', progress=0.1)
                 if self.model is None:
                     from faster_whisper import WhisperModel
                     self.model = WhisperModel(self.model_name, device=self.device, compute_type='int8' if self.device == 'cpu' else 'float16')
+                stage = 'recognition'
                 self.update(key, message='正在识别课堂语音')
                 segments, info = self.model.transcribe(audio, language='zh', vad_filter=True, initial_prompt='以下是大学课堂的中文授课内容。')
                 result = []
@@ -136,11 +152,23 @@ class Service:
                     result.append(dict(start=segment.start, end=segment.end, text=segment.text))
                     self.update(key, progress=min(0.99, 0.1 + 0.89 * segment.end / max(1, info.duration)))
                 if not result:
+                    stage = 'no_speech'
                     raise ValueError('未识别到语音，请选择另一录像画面')
                 self.update(key, status='done', progress=1, message='文字稿已生成', segments=result)
-        except Exception:
-            # Never return URLs, filesystem paths, tokens or upstream exception text.
-            self.update(key, status='failed', message='转写失败：检查电脑校园网、FFmpeg、模型下载及录像是否含音轨')
+        except Exception as error:
+            # Fixed, stage-specific messages preserve diagnosis without leaking signed URLs.
+            messages = {
+                'download': '录像下载失败：检查校园网、录像权限或重新打开本课节以获取最新地址。',
+                'audio': '音频提取失败：所选录像可能没有音轨，或录像格式不受支持，请选择教师画面重试。',
+                'model': '模型加载失败：首次需联网下载识别模型，请检查模型下载网络和磁盘空间。',
+                'recognition': '语音识别失败：检查可用内存，或换一段较短的录像重试。',
+                'no_speech': '没有识别到语音，请先确认所选画面播放时有教师声音。',
+            }
+            message = messages[stage]
+            if isinstance(error, MemoryError):
+                message = '内存不足，无法完成转写，请关闭其他大型程序后重试。'
+            self.update(key, status='failed', message=message, error_stage=stage, error_type=type(error).__name__)
+
 
 
 def handler(service, token):

@@ -10,7 +10,7 @@ class WorkerTests(unittest.TestCase):
     def test_bundled_resources_match(self):
         root = Path(__file__).resolve().parents[2]
         resources = root / 'multiplatform/shared/src/desktopMain/resources/transcription'
-        for name in ('server.py', 'worker.py'):
+        for name in ('server.py', 'worker.py', 'audio_smoke.py'):
             self.assertEqual((resources/name).read_bytes(), (Path(__file__).parent/name).read_bytes())
 
     def test_success_exports_unicode_and_reports_status(self):

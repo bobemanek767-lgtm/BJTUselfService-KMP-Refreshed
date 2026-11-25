@@ -24,6 +24,7 @@ internal actual suspend fun transcribeLocally(url: String, title: String, onStat
             .apply { environment()["PYTHONIOENCODING"] = "utf-8" }
             .redirectError(ProcessBuilder.Redirect.DISCARD).start()
         process = child
+        var failureMessage: String? = null
         coroutineScope {
             val watcher = launch(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) {
                 try { awaitCancellation() } finally {
@@ -42,12 +43,14 @@ internal actual suspend fun transcribeLocally(url: String, title: String, onStat
                 child.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
                     for (line in lines) {
                         ensureActive()
-                        val message = runCatching { Json.parseToJsonElement(line).jsonObject["status"]?.jsonPrimitive?.content }.getOrNull()
+                        val event = runCatching { Json.parseToJsonElement(line).jsonObject }.getOrNull()
+                        val message = event?.get("status")?.jsonPrimitive?.content
+                        if (event?.get("failed")?.jsonPrimitive?.booleanOrNull == true) failureMessage = message
                         if (message != null) withContext(Dispatchers.Main) { onStatus(message.take(300)) }
                     }
                 }
                 ensureActive()
-                if (child.waitFor() != 0) throw LocalTranscriptException("转写失败：检查模型下载、校园网及所选录像是否含声音。")
+                if (child.waitFor() != 0) throw LocalTranscriptException(failureMessage ?: "转写程序异常退出，请重新启动应用后重试。")
             } finally { withContext(NonCancellable) { watcher.cancelAndJoin() } }
         }
         val txt = File(work, "transcript.txt")

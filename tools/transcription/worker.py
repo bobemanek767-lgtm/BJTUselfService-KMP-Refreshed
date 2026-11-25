@@ -12,7 +12,7 @@ def run(request, output):
     def report(key, **values):
         update(key, **values)
         if 'message' in values:
-            print(json.dumps({'status': values['message']}, ensure_ascii=False), flush=True)
+            print(json.dumps({'status': values['message'], 'failed': values.get('status') == 'failed'}, ensure_ascii=False), flush=True)
     service.update = report
     try:
         service.run('local', request['url'])
@@ -30,7 +30,9 @@ if __name__ == '__main__':
         import subprocess
         from faster_whisper import WhisperModel
         subprocess.run([ffmpeg_executable(), '-version'], check=True, stdout=subprocess.DEVNULL)
-        print('TRANSCRIPT_RUNTIME_OK', flush=True)
+        from audio_smoke import check_audio_pipeline
+        check_audio_pipeline()
+        print('TRANSCRIPT_RUNTIME_OK (real HLS/AES audio extraction verified)', flush=True)
         sys.exit(0)
     try:
         request = json.loads(sys.stdin.buffer.readline(16385).decode('utf-8'))

@@ -32,7 +32,7 @@ class TranscriptTests(unittest.TestCase):
                 text = (Path(tmp) / name).read_text()
                 self.assertNotIn('https://', text)
                 self.assertIn('URI="000001.bin"', text)
-                self.assertIn('000002.bin', text)
+                self.assertIn('000002.ts', text)
         with tempfile.TemporaryDirectory() as tmp:
             cache = server.HlsCache(tmp)
             with patch.object(cache.opener, 'open', return_value=Response(b'#EXTM3U\nhttps://evil.com/seg.ts\n')):
