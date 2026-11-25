@@ -57,6 +57,18 @@ jobs:
           New-Item -ItemType Directory -Force ../installer-output | Out-Null
           Copy-Item $msi.FullName ../installer-output/BJTU-Windows-Transcript.msi
           Get-FileHash ../installer-output/BJTU-Windows-Transcript.msi -Algorithm SHA256 | Format-List | Out-File ../installer-output/SHA256.txt
+      - name: Install and launch smoke test
+        shell: pwsh
+        run: |
+          $msi = (Resolve-Path installer-output/BJTU-Windows-Transcript.msi).Path
+          $install = Start-Process msiexec.exe -ArgumentList @('/i', ('"' + $msi + '"'), '/qn', '/norestart') -Wait -PassThru
+          if ($install.ExitCode -notin @(0,3010)) { throw "MSI installation failed: $($install.ExitCode)" }
+          $exe = Join-Path $env:ProgramFiles ($env:WINDOWS_PACKAGE_NAME + '/' + $env:WINDOWS_PACKAGE_NAME + '.exe')
+          if (-not (Test-Path $exe)) { throw 'Installed application executable missing' }
+          $app = Start-Process -FilePath $exe -PassThru
+          if ($app.WaitForExit(15000)) { throw "Application exited during startup: $($app.ExitCode)" }
+          Stop-Process -Id $app.Id -Force
+          'MSI installation and 15-second startup smoke test passed.' | Out-File installer-output/VALIDATION.txt
       - uses: actions/upload-artifact@v4
         with:
           name: BJTU-Windows-Transcript-Installer
