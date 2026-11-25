@@ -48,7 +48,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Frozen worker smoke test failed' }
           Compress-Archive -Path dist/BJTUTranscriptWorker/* -DestinationPath multiplatform/shared/src/desktopMain/resources/transcription/runtime.zip -CompressionLevel Optimal
       # Shared Windows tests already passed in run 45570448127.
-      # This revision changes packaging only; packageMsi recompiles the app.
+      # Transcription regressions and real encrypted HLS decoding are tested above; packageMsi recompiles the app.
       - name: Build Windows installer
         shell: pwsh
         working-directory: multiplatform
