@@ -209,6 +209,7 @@ compose.desktop {
         )
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
+            includeAllModules = System.getenv("BJTU_TRANSCRIPT_FULL_RUNTIME") == "1"
             // jdk.charsets：AWT 原生菜单（托盘）在中文 Windows 上需要 GBK 编码器，缺了会显示方框。
             modules("java.sql", "jdk.httpserver", "jdk.charsets", "jdk.localedata")
             // 中文显示名。英文系统上 jpackage 默认选代码页 1252 的 en .wxl，WiX light 会把中文

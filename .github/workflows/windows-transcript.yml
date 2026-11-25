@@ -13,8 +13,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
+      BJTU_PACKAGE_BUILD_ID: ${{ github.run_number }}.${{ github.run_attempt }}
+      BJTU_TRANSCRIPT_FULL_RUNTIME: '1'
       WINDOWS_PACKAGE_UPGRADE_UUID: 33e801db-8b5f-4909-a42d-20bc02acb6bc
-      WINDOWS_PACKAGE_NAME: 交大自由行 课堂文字稿版
+      WINDOWS_PACKAGE_NAME: BJTUTranscript
       WINDOWS_PACKAGE_DESCRIPTION: 交大自由行 Windows 本地课堂语音转写版
       JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Duser.language=zh -Duser.country=CN -Duser.timezone=Asia/Shanghai
     steps:
@@ -85,11 +87,18 @@ jobs:
           if ($install.ExitCode -notin @(0,3010)) { throw "MSI installation failed: $($install.ExitCode)" }
           $exe = Join-Path $env:ProgramFiles ($env:WINDOWS_PACKAGE_NAME + '/' + $env:WINDOWS_PACKAGE_NAME + '.exe')
           if (-not (Test-Path $exe)) { throw 'Installed application executable missing' }
-          $app = Start-Process -FilePath $exe -PassThru
-          if ($app.WaitForExit(15000)) { throw "Application exited during startup: $($app.ExitCode)" }
+          Get-Content (Join-Path (Split-Path $exe) 'app/*.cfg') | Out-File installer-output/LAUNCH-CONFIG.txt
+          Remove-Item Env:JAVA_TOOL_OPTIONS -ErrorAction SilentlyContinue
+          $app = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput installer-output/APP-STDOUT.txt -RedirectStandardError installer-output/APP-STDERR.txt
+          if ($app.WaitForExit(15000)) {
+            Get-Content installer-output/APP-STDOUT.txt,installer-output/APP-STDERR.txt
+            Get-Content installer-output/LAUNCH-CONFIG.txt
+            throw "Application exited during startup: $($app.ExitCode)"
+          }
           Stop-Process -Id $app.Id -Force
           'MSI installation and 15-second startup smoke test passed.' | Out-File installer-output/VALIDATION.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: BJTU-Windows-Transcript-Installer
           path: installer-output/*
@@ -102,3 +111,10 @@ jobs:
             multiplatform/windowsApp/build/compose/logs/
             multiplatform/shared/build/test-results/
             build/BJTUTranscriptWorker/warn-BJTUTranscriptWorker.txt
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: windows-transcript-gradle-${{ hashFiles('multiplatform/gradle/libs.versions.toml', 'multiplatform/gradle/wrapper/gradle-wrapper.properties') }}
