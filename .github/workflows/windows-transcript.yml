@@ -19,6 +19,12 @@ jobs:
       JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Duser.language=zh -Duser.country=CN -Duser.timezone=Asia/Shanghai
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: windows-transcript-gradle-${{ hashFiles('multiplatform/gradle/libs.versions.toml', 'multiplatform/gradle/wrapper/gradle-wrapper.properties') }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -39,11 +45,25 @@ jobs:
           & ./dist/BJTUTranscriptWorker/BJTUTranscriptWorker.exe --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Frozen worker smoke test failed' }
           Compress-Archive -Path dist/BJTUTranscriptWorker/* -DestinationPath multiplatform/shared/src/desktopMain/resources/transcription/runtime.zip -CompressionLevel Optimal
+      - name: Configure platform-appropriate tests
+        shell: pwsh
+        run: |
+          @'
+          allprojects {
+              tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+                  filter {
+                      // These existing tests invoke macOS/Unix-only functionality.
+                      excludeTestsMatching("*.MacUninstallCleanerTest*")
+                      excludeTestsMatching("*.DesktopAgentIntegrationTest.installWritesWorkingScriptAndSkill*")
+                  }
+              }
+          }
+          '@ | Set-Content -Encoding utf8 windows-tests.init.gradle.kts
       - name: Compile and test Windows code
         shell: pwsh
         working-directory: multiplatform
         run: |
-          ./gradlew.bat :shared:desktopTest :windowsApp:compileKotlinWindows --no-daemon --no-configuration-cache --max-workers=2
+          ./gradlew.bat :shared:desktopTest :windowsApp:compileKotlinWindows --init-script ../windows-tests.init.gradle.kts --no-daemon --no-configuration-cache --max-workers=2
           if ($LASTEXITCODE -ne 0) { throw 'Windows compilation/tests failed' }
       - name: Build Windows installer
         shell: pwsh
