@@ -230,7 +230,7 @@ compose.desktop {
                 shortcut = true
                 menuGroup = windowsPackageDisplayName
                 // 固定升级码，后续同范围安装才能覆盖升级。
-                upgradeUuid = "8f3a1c2e-7b64-4d91-a5e0-2c9b6f4d8a17"
+                upgradeUuid = System.getenv("WINDOWS_PACKAGE_UPGRADE_UUID") ?: "8f3a1c2e-7b64-4d91-a5e0-2c9b6f4d8a17"
                 iconFile.set(project.file("src/windowsMain/resources/BJTUselfServiceKMP.ico"))
             }
         }
