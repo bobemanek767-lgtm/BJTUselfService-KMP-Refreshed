@@ -71,6 +71,8 @@ jobs:
           if (-not (Test-Path $exe)) { throw 'Installed application executable missing' }
           Get-Content (Join-Path (Split-Path $exe) 'app/*.cfg') | Out-File installer-output/LAUNCH-CONFIG.txt
           Remove-Item Env:JAVA_TOOL_OPTIONS -ErrorAction SilentlyContinue
+          # Hosted Windows runners do not provide a normal desktop GPU.
+          $env:SKIKO_RENDER_API = 'SOFTWARE'
           $app = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput installer-output/APP-STDOUT.txt -RedirectStandardError installer-output/APP-STDERR.txt
           if ($app.WaitForExit(15000)) {
             Get-Content installer-output/APP-STDOUT.txt,installer-output/APP-STDERR.txt
